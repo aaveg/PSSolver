@@ -25,24 +25,5 @@ class Field:
     def set_L_hat(self, L_hat):
         self.L_hat = L_hat
 
-    # def update_spatial(self):
-    #     self.f = torch.fft.ifft2(self.f_hat).real
 
-    # def update_spectral(self):
-    #     self.f_hat = torch.fft.fft2(self.f)
 
-    # def linear_term(self, kx, ky, k2):
-    #     if self.L_hat_fn is not None:
-    #         return self.L_hat_fn(kx, ky, k2, self.f)
-    #     else:
-    #         return torch.zeros_like(self.f_hat)
-
-    # def nonlinear_term(self, kx, ky, k2):
-    #     if self.nonlinear_fn is not None:
-    #         return self.nonlinear_fn(kx, ky, k2, self.f)
-    #     else:
-    #         return torch.zeros_like(self.f_hat)
-        
-
-    # def set_nonlinear_fn(self, nonlinear_fn):
-    #     self.nonlinear_fn = nonlinear_fn
