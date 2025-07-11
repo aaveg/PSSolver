@@ -24,5 +24,6 @@ class SemiImplicitEulerIntegrator(TimeIntegrator):
             N_hat = N_hats[name]
 
             field.f_hat = (field.f_hat + self.dt * N_hat) / (1 - self.dt * L_hat)
-            field.f = torch.fft.ifft2(field.f_hat).real
-            field.f_hat = torch.fft.fft2(field.f)
+        
+        field.f = torch.fft.ifft2(field.f_hat).real
+        field.f_hat = torch.fft.fft2(field.f)

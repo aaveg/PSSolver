@@ -1,20 +1,24 @@
 import torch
-from Field import Field
+from Field import Fields
 
 class PDEModel:
-    def __init__(self, N, device):
-        self.N = N
+    def __init__(self, shape, device):
+        self.shape = shape
         self.device = device
-        self.dynamic_fields={}
-        self.fields = {}
+
+        self.fields = Fields(shape = shape, device = device)
+        self.dynamic_fields= self.fields[0]
+        self.passive_fields= self.fields[1]
+        # self.fields = {}
         self.nl_eqns = {}
         self.passive_compute_fns={}
 
 
-    def add_active_field(self, name, init, L_hat, N_hat):
-        if name in self.fields:
+    def add_dynamic_field(self, name, init, L_hat, N_hat):
+        if name in self.fields.field_names:
             raise ValueError(f"Field '{name}' already exists.")
 
+        self.fields.field_names{name} = (0,self.fields.num_dyn_fields)
         dynamic_field = Field(name, self.N, dynamic = True, device = self.device)
         dynamic_field.set_initial_condition(init)
         dynamic_field.set_L_hat(L_hat)
