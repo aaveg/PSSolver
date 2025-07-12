@@ -86,27 +86,34 @@ class Fields:
         self.device = device
         self.dtype = dtype
 
-        self.num_dyn_fields = 0
-        self.num_stat_fields = 0
-        self.field_names = {}
+        # self.num_dyn_fields = 0
+        # self.num_stat_fields = 0
+        # self.field_names = {}
 
-        self.spatial_name_to_index = {} #{name: i for i, name in enumerate(field_names)}
-        self.spectral_name_to_index = {} #{f"{name}.hat": i for i, name in enumerate(field_names)}
+        # self.spatial_name_to_index = {} #{name: i for i, name in enumerate(field_names)}
+        # self.spectral_name_to_index = {} #{f"{name}.hat": i for i, name in enumerate(field_names)}
 
         self.dim = len(shape)
 
-        self.spatial = torch.zeros( (2, 0) + shape ) # shape: (dynamics_or_static = 2, number_of_fields = 0, Nx, Ny, Nz)
-        self.spectral = self.fftn()
+        self.name_to_idx = {}
+        self.field_count = 0
+        self.dyn_idx = []
+        self.stat_idx = []
 
-    # def __getitem__(self, key):
-    #     """Access a field by name (optionally with '.hat') """
-    #     if isinstance(key, str):
-    #         if key.endswith('.hat'):
-    #             return self.spectral[self.spectral_name_to_index[key]]
-    #         else:
-    #             return self.spatial[self.spatial_name_to_index[key]]
-    #     else:
-    #         raise KeyError("Key must be a field name (str), optionally ending with '.hat'")
+        self.spatial = torch.zeros((0,) + shape, device=self.device, dtype=self.dtype)  # shape: (number_of_fields = 0, Nx, Ny, Nz)
+        self.L_hat   = torch.zeros((0,) + shape, device=self.device, dtype=self.dtype)  # shape: (num_dyn_fields = 0, Nx, Ny, Nz)
+        self.spectral = torch.zeros((0,) + shape, device=self.device, dtype=self.dtype)
+
+
+    def __getitem__(self, key):
+        """Access a field by name (optionally with '.hat') """
+        if isinstance(key, str):
+            if key.endswith('.hat'):
+                return self.spectral[self.name_to_idx[key[:-4]]]
+            else:
+                return self.spatial[self.name_to_idx[key]]
+        else:
+            raise KeyError("Key must be a field name (str), optionally ending with '.hat'")
 
     # def __setitem__(self, key, value):
     #     """Update a field by name (optionally with '.hat') or index"""
@@ -120,11 +127,11 @@ class Fields:
 
     def fftn(self):
         """Return batched N-dimensional FFT of all fields"""
-        return torch.fft.fftn(self.spatial, dim=tuple(range(2, 2 + self.dim)))
+        return torch.fft.fftn(self.spatial, dim=tuple(range(1, 1 + self.dim)))
 
     def ifftn(self):
         """Return batched N-dimensional IFFT (real part) of all fields"""
-        return torch.fft.ifftn(self.spatial, dim=tuple(range(2, 2 + self.dim))).real
+        return torch.fft.ifftn(self.spectral, dim=tuple(range(1, 1 + self.dim))).real
 
     def to(self, device):
         """Move to a new device"""

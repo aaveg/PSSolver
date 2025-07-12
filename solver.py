@@ -7,9 +7,9 @@ import pygame
 import numpy as np
 
 class System:
-    def __init__(self, N, L=2 * torch.pi, dt=0.01, device='cuda', record_every_n_steps=1000):
+    def __init__(self, shape, L=2 * torch.pi, dt=0.01, device='cuda', record_every_n_steps=1000):
 
-        self.N = N
+        self.shape = shape
         self.L = L
         self.dt = dt
         self.device = device
@@ -18,16 +18,19 @@ class System:
         self._init_q_space()
 
         self.integrator = SemiImplicitEulerIntegrator(dt, self.qx, self.qy, self.q2)
-        self.model = PDEModel(N, device)
+        self.model = PDEModel(shape, device)
 
     def _init_q_space(self):
         # Spatial grid (not strictly needed but kept for extensibility)
-        x = torch.linspace(0, self.L - self.L / self.N, self.N, device=self.device)
-        self.X, self.Y = torch.meshgrid(x, x, indexing='ij')
+        Nx, Ny = self.shape
+        x = torch.linspace(0, self.L - self.L / Nx, Nx, device=self.device)
+        y = torch.linspace(0, self.L - self.L / Ny, Ny, device=self.device)
+        self.X, self.Y = torch.meshgrid(x, y, indexing='ij')
 
         # Wavenumbers
-        q = torch.fft.fftfreq(self.N, d=self.L/self.N).to(self.device) * 2 * torch.pi
-        self.qx, self.qy = torch.meshgrid(q, q, indexing='ij')
+        qx = torch.fft.fftfreq(Nx, d=self.L/Nx).to(self.device) * 2 * torch.pi
+        qy = torch.fft.fftfreq(Ny, d=self.L/Ny).to(self.device) * 2 * torch.pi
+        self.qx, self.qy = torch.meshgrid(qx, qy, indexing='ij')
         self.q2 = self.qx**2 + self.qy**2
         self.q2[0, 0] = 1e-10  # avoid div by 0 if using 1/q^2 later
 
