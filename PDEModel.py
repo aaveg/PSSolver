@@ -16,6 +16,7 @@ class PDEModel:
         # self.stat_name_to_idx = {}
         # self.stat_count = 0 
         self.stat_compute_fns = []
+        self.nlmodel = NonlinearModel()
 
 
     def add_dynamic_field(self, name, init, L_hat, N_hat):
@@ -37,10 +38,27 @@ class PDEModel:
     def compute_static(self):
         outputs = [fn(self.fields) for fn in self.stat_compute_fns]
         return torch.stack(outputs)  
-
+    
     def compute_nonlinear(self):
         outputs = [fn(self.fields) for fn in self.nl_eqns]
-        return torch.stack(outputs)  
+        return torch.stack(outputs)
+
+    # def compute_nonlinear(self):
+    #     return self.nlmodel(self.fields)
+
+    
+class NonlinearModel(torch.nn.Module):
+    def forward(self, fields):  # fields: (num_fields, nx, ny)
+        u = fields['u']  # shape (nx, ny)
+        v = fields['v']
+
+        F = 0.06
+        k = 0.062
+        vsq = v**2
+        out0 = -u * vsq + F * (1 - u)
+        out1 = u * vsq - (F + k) * v
+
+        return torch.fft.fft2(torch.stack([out0, out1]))  # shape: (2, nx, ny), FFT along last two dims
 
     # def add_dynamic_field(self, name, init, L_hat, N_hat):
     #     if (name in self.dyn_name_to_idx) or (name in self.stat_name_to_idx) :
@@ -74,10 +92,9 @@ class PDEModel:
     #     ).to(self.device)
 
     # def compute_nonlinear(self):
-    #     results = {}
-    #     for name, eq in self.nl_eqns.items():
-    #         results[name] = eq(self.fields)  
-
+    #     results = []
+    #     for eq in self.nl_eqns:
+    #         results.append(eq(self.fields))  
     #     return results
 
     # def update_stat_fields(self):

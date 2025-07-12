@@ -4,25 +4,25 @@ import time
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Choose shapes
-dyn_shape_0 = 2  # Change as needed
-stat_shape_0 = 1  # Change as needed
+dyn_shape_0 = 3  # Change as needed
+stat_shape_0 = 4  # Change as needed
 
 dyn = torch.randn(dyn_shape_0, 256, 256, device=device)
 stat = torch.randn(stat_shape_0, 256, 256, device=device)
 combined = torch.cat([stat, dyn], dim=0)
 
 steps = 100000
-# First loop: per-matrix FFT/IFFT
-start = time.time()
-for _ in range(steps):
-    for d in dyn:
-        d_fft = torch.fft.fft2(d)
-        d_ifft = torch.fft.ifft2(d_fft).real
-    for s in stat:
-        s_fft = torch.fft.fft2(s)
-        s_ifft = torch.fft.ifft2(s_fft).real
-end = time.time()
-print(f"Loop 1 (per-matrix): {end - start:.4f} seconds")
+# # First loop: per-matrix FFT/IFFT
+# start = time.time()
+# for _ in range(steps):
+#     for d in dyn:
+#         d_fft = torch.fft.fft2(d)
+#         d_ifft = torch.fft.ifft2(d_fft).real
+#     for s in stat:
+#         s_fft = torch.fft.fft2(s)
+#         s_ifft = torch.fft.ifft2(s_fft).real
+# end = time.time()
+# print(f"Loop 1 (per-matrix): {end - start:.4f} seconds")
 
 # Second loop: batch FFT/IFFT
 start = time.time()
