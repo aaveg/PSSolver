@@ -12,39 +12,26 @@ class TimeIntegrator:
 
 
 class SemiImplicitEulerIntegrator(TimeIntegrator):
-    def __init__(self, dt, qx, qy, q2):
+    def __init__(self, model, dt, qx, qy, q2):
         super().__init__(dt, qx, qy, q2)
+        self.model = model
+        self.denom = 1 - model.fields.L_hat *self.dt # cache for denominator in the update step = (1 - L_hat*dt)
+        self.dyn_count = self.model.fields.dyn_count
+        self.stat_count = self.model.fields.stat_count
 
-    def step(self, model):
-        N_hats = model.compute_nonlinear()
-        L_hats = model.fields.L_hat
-
-        dyn_idx = model.fields.dyn_idx
-        # fields = model.fields
-        # print(model.fields.spectral[model.fields.dyn_idx])
-        # model.fields.spectral[dyn_idx] = (model.fields.spectral[dyn_idx] + self.dt * N_hats) / (1 - self.dt * L_hats)
-        model.fields.spectral[:model.fields.field_count] = (model.fields.spectral[:model.fields.field_count] + self.dt * N_hats) / (1 - self.dt * L_hats)
+    def step(self):
+        N_hats = self.model.compute_nonlinear() 
 
         # Use in-place operations to reduce memory allocations and improve speed
-        # for idx in dyn_idx:
-        #     model.fields.spectral[idx] = (model.fields.spectral[idx] + self.dt * N_hats[idx]) / (1 - self.dt * L_hats[idx])
-
-        # model.fields.spectral[dyn_idx] += (self.dt * N_hats) 
-        # model.fields.spectral[dyn_idx] /= (1 - self.dt * L_hats)
+        dyn_fields = self.model.fields.spectral[:self.dyn_count]
+        dyn_fields.add_(self.dt * N_hats)
+        dyn_fields.div_(self.denom)
         
-        # model.fields.spectral = (model.fields.spectral + self.dt * N_hats) / (1 - self.dt * L_hats)
-
-        # model.fields.spectral += self.dt * N_hats
-        # model.fields.spectral /= (1 - self.dt * L_hats)
-
-
-
-        # print(model.fields.spectral[model.fields.dyn_idx])
-        # for name, field in fields.items():
-        #     L_hat = field.L_hat  # = field.linear_term(self.qx, self.qy, self.q2)
-        #     N_hat = N_hats[name]
-
-        #     field.f_hat = (field.f_hat + self.dt * N_hat) / (1 - self.dt * L_hat)
+        if self.stat_count != 0:
+            self.model.fields.spectral[self.dyn_count:] = self.model.compute_static() 
         
-        model.fields.spatial = model.fields.ifftn() #torch.fft.ifft2(model.fields.spectral).real
-        model.fields.spectral = model.fields.fftn() #torch.fft.fft2(field.f)
+        # self.model.fields.spectral *= self.model.fields.dealiasing_mask
+
+        self.model.fields.spatial = self.model.fields.ifftn() # calculate spatial from spectral
+        # spectral cleanup. Taking fft after ifft is critical for stability. 
+        self.model.fields.spectral = self.model.fields.fftn() 

@@ -1,5 +1,7 @@
 import torch
 from Field import Fields
+import warnings
+
 
 class PDEModel:
     def __init__(self, shape, device):
@@ -7,96 +9,91 @@ class PDEModel:
         self.device = device
 
         self.fields = Fields(shape = shape, device = device)
-        # self.dyn_name_to_idx = {}
-        # self.dyn_count = 0 
-        # self.dyn_inits = []
-        # self.dyn_L_hat = []
-        self.nl_eqns = []
+        self.num_fields = 0
 
-        # self.stat_name_to_idx = {}
-        # self.stat_count = 0 
-        self.stat_compute_fns = []
-        self.nlmodel = NonlinearModel()
+        self.dyn_fields = []
+        self.stat_fields = []
+        self.nlmodel = None
+
+        self.is_built: bool = False
 
 
-    def add_dynamic_field(self, name, init, L_hat, N_hat):
-        self.fields.name_to_idx[name] = self.fields.field_count 
-        self.fields.dyn_idx.append(self.fields.field_count)
-        self.fields.field_count+=1
-        self.fields.spatial = torch.cat([self.fields.spatial, init.unsqueeze(0).to(self.device)], dim=0)
+    def add_dynamic_field(self, name, init, L_hat):
+        if init.shape != self.shape:
+            raise ValueError(f"Initial value for field '{name}' must have shape {self.shape}, got {init.shape}")
+        self.dyn_fields.append([name, init, L_hat])
+
+    def add_static_field(self, name):
+        self.stat_fields.append([name])  
+
+    def set_nonlinear_model(self, model):
+        if not isinstance(model, torch.nn.Module):
+            raise TypeError("Nonlinear model must be a torch.nn.Module")
+        self.nlmodel = model
+
+    def set_static_compute_model(self, model):
+        if not isinstance(model, torch.nn.Module):
+            raise TypeError("Static compute model must be a torch.nn.Module")
+        self.static_model = model
+
+    def build(self):
+        if self.is_built:
+            pass
+        
+        if not self.dyn_fields:
+            raise ValueError("No dynamic fields added. Add at least one dynamic field.")
+        
+        # Check for duplicate names
+        all_names = [entry[0] for entry in self.dyn_fields + self.stat_fields]
+        if len(all_names) != len(set(all_names)):
+            raise ValueError("Duplicate field names detected")
+
+        count = 0
+        inits = []
+        L_hats = []
+        for entry in self.dyn_fields:
+            self.fields.name_to_idx[entry[0]] = count 
+            count += 1
+            inits.append(entry[1])
+            L_hats.append(entry[2])
+        
+        self.fields.dyn_count = count
+ 
+        for entry in self.stat_fields:
+            self.fields.name_to_idx[entry[0]] = count 
+            count += 1
+            inits.append(torch.zeros(self.shape))
+            # self.stat_compute_fns.append(entry[1])
+        self.fields.stat_count = count - self.fields.dyn_count
+
+        self.fields.spatial = torch.stack(inits).to(self.device)
         self.fields.spectral = self.fields.fftn()
-        self.fields.L_hat = torch.cat([self.fields.L_hat, L_hat.unsqueeze(0).to(self.device)], dim=0)
-        self.nl_eqns.append(N_hat)
+        self.fields.L_hat = torch.stack(L_hats).to(self.device)
 
-    def add_static_field(self, name, compute_fn):
-        self.fields.name_to_idx[name] = self.fields.field_count 
-        self.fields.stat_idx.append(self.fields.field_count)
-        self.fields.field_count+=1
-        self.fields.spatial = torch.cat([self.fields.spatial, torch.zeros(self.shape).unsqueeze(0)], dim=0)
-        self.stat_compute_fns.append(compute_fn)
+        if self.nlmodel is None:
+            # warnings.warn("Nonlinear model not set. Using zero-output model.")
+            class ZeroModel(torch.nn.Module):
+                def forward(self, fields):
+                    return 0
+            self.nlmodel = ZeroModel()
+        
+        else:
+            try:
+                test_output = self.nlmodel(self.fields)
+                expected_shape = (self.fields.dyn_count, *self.shape)
+                if test_output.shape != expected_shape:
+                    raise ValueError(f"Nonlinear model output shape {test_output.shape} doesn't match expected {expected_shape}")
+            except Exception as e:
+                raise RuntimeError("Error occurred during nonlinear model validation.")
+    
+    def get_field_order(self):
+        """Return the order of dynamic fields for reference when writing nonlinear models."""
+        return [entry[0] for entry in self.dyn_fields]
 
     def compute_static(self):
-        outputs = [fn(self.fields) for fn in self.stat_compute_fns]
-        return torch.stack(outputs)  
-    
+        return self.static_model(self.fields)
+        # outputs = [fn(self.fields) for fn in self.stat_compute_fns]
+        # return torch.stack(outputs)  
+
     def compute_nonlinear(self):
-        outputs = [fn(self.fields) for fn in self.nl_eqns]
-        return torch.stack(outputs)
-
-    # def compute_nonlinear(self):
-    #     return self.nlmodel(self.fields)
-
-    
-class NonlinearModel(torch.nn.Module):
-    def forward(self, fields):  # fields: (num_fields, nx, ny)
-        u = fields['u']  # shape (nx, ny)
-        v = fields['v']
-
-        F = 0.06
-        k = 0.062
-        vsq = v**2
-        out0 = -u * vsq + F * (1 - u)
-        out1 = u * vsq - (F + k) * v
-
-        return torch.fft.fft2(torch.stack([out0, out1]))  # shape: (2, nx, ny), FFT along last two dims
-
-    # def add_dynamic_field(self, name, init, L_hat, N_hat):
-    #     if (name in self.dyn_name_to_idx) or (name in self.stat_name_to_idx) :
-    #         raise ValueError(f"Field name '{name}' already exists.")
-    #     if init.shape != self.shape:
-    #         raise ValueError(f"Initial condition for '{name}' has shape {init.shape}, expected {self.shape}.")
-    #     if L_hat.shape != self.shape:
-    #         raise ValueError(f"L_hat for '{name}' has shape {L_hat.shape}, expected {self.shape}.")
-        
-    #     self.dyn_name_to_idx[name] = self.dyn_count 
-    #     self.dyn_count += 1
-    #     self.dyn_inits.append(init)
-    #     self.dyn_L_hat.append(L_hat)
-
-    #     self.nl_eqns[name] = N_hat
-
-
-    # def add_passive_field(self, name, compute_fn):
-    #     if (name in self.dyn_name_to_idx) or (name in self.stat_name_to_idx) :
-    #         raise ValueError(f"Field name '{name}' already exists.")
-
-    #     self.stat_name_to_idx[name] = self.stat_count 
-    #     self.stat_count += 1
-    #     self.stat_compute_fns[name] = compute_fn
-
-    # def finalize(self):
-    #     self.stat_idx_offset = self.dyn_count
-    #     self.all_inits = torch.stack(
-    #         [torch.stack(self.dyn_inits)] +
-    #         [torch.zeros((self.stat_count, *self.shape), device=self.device)],
-    #     ).to(self.device)
-
-    # def compute_nonlinear(self):
-    #     results = []
-    #     for eq in self.nl_eqns:
-    #         results.append(eq(self.fields))  
-    #     return results
-
-    # def update_stat_fields(self):
-    #     for name, compute_fn in self.passive_compute_fns.items():
-    #         self.fields[name].f = compute_fn(self.fields)
+        return self.nlmodel(self.fields)

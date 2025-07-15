@@ -3,14 +3,6 @@ import torch
 import time
 
 
-N = 128
-L = 128
-dt = 0.1
-steps = 100000
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-solver = System(shape = (N,N), L=L, dt=dt, device=device, record_every_n_steps = steps/100)
-
 def init_u(N):
     u = torch.ones(N, N)
     r = 10  # half size of perturbation square
@@ -25,6 +17,27 @@ def init_v(N):
     v += 0.02 * torch.randn(N, N)
     return v
 
+class NonlinearModel(torch.nn.Module):
+    def forward(self, fields): 
+        u = fields['u']  
+        v = fields['v']
+
+        F = 0.06
+        k = 0.062
+        vsq = v**2
+        out0 = -u * vsq + F * (1 - u)
+        out1 = u * vsq - (F + k) * v
+
+        return torch.fft.fft2(torch.stack([out0, out1]))  
+
+
+N = 128
+L = 128
+dt = 0.1
+steps = 100000
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+solver = System(shape = (N,N), L=L, dt=dt, device=device, record_every_n_steps = steps/100)
 
 # # --- Parameters ---
 du = 0.16
@@ -36,16 +49,19 @@ k = 0.062
 solver.model.add_dynamic_field(
     "u",
     init = init_u(N),
-    L_hat = -solver.q2 * (du),
-    N_hat = lambda R: torch.fft.fft2(-R["u"] * R["v"]**2 + F * (1 - R["u"]))
+    L_hat = -solver.q2 * (du)
 )
 # --- Add active fields ---
 solver.model.add_dynamic_field(
     "v",
     init =  init_v(N),
-    L_hat = -solver.q2 * (dv),
-    N_hat = lambda R: torch.fft.fft2(R["u"] * R["v"]**2 - (F + k) * R["v"])
+    L_hat = -solver.q2 * (dv)
 )
+
+
+solver.model.set_nonlinear_model(NonlinearModel())
+solver.build()
+
 traj = []
 start = time.time()
 for i in range(steps):
