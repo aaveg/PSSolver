@@ -1,6 +1,7 @@
 from solver import System
 import torch
 import time
+from tqdm import trange
 
 
 class CH_NLmodel(torch.nn.Module):
@@ -37,7 +38,7 @@ solver.build()
 
 traj = []
 start = time.time()
-for i in range(steps):
+for i in trange(steps):
     solver.run(1)
     if i % solver.record_every_n_steps == 0:
         traj.append(solver.model.fields['u'])
