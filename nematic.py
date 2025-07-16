@@ -1,6 +1,7 @@
 import time
 import torch
 from solver import System
+from tqdm import trange
 
 def Q_init(shape, seed = 42,):
     Nx,Ny = shape
@@ -23,8 +24,6 @@ class NonlinearModel(torch.nn.Module):
         ux = fields['ux']
         uy = fields['uy']
         w  = fields['w']
-        iqx = 1j*fields.qx
-        iqy = 1j*fields.qy
         gxQxx = fields['gradx_Qxx']
         gyQxx = fields['grady_Qxx']
         gxQxy = fields['gradx_Qxy']
@@ -39,8 +38,32 @@ class NonlinearModel(torch.nn.Module):
         return torch.fft.fft2(torch.stack([out0, out1]))  
 
 class Static_compute_fn(torch.nn.Module):
+
+    ### avoid repeating same calculations
     def forward(self, fields): 
-        ### avoid repaeating same calculations
+        # Cache Projection operator on first forward call
+        if not hasattr(self, 'P'):
+            qx = fields.qx
+            qy = fields.qy
+            iqx = 1j * qx
+            iqy = 1j * qy
+            q2 = fields.q2
+            self.iqx = iqx
+            self.iqy = iqy
+            P = torch.zeros((2, 2, *q2.shape), dtype=torch.cfloat, device=q2.device)
+            P[0, 0] = 1 - (qx * qx) / q2
+            P[0, 1] = - (qx * qy) / q2
+            P[1, 0] = - (qy * qx) / q2
+            P[1, 1] = 1 - (qy * qy) / q2
+            self.P = P * 1/(fric+eta*q2)
+
+            sig_to_f = torch.zeros((2, 2, *q2.shape), dtype=torch.cfloat, device=q2.device)
+            sig_to_f[0, 0] = iqx
+            sig_to_f[0, 1] = iqy
+            sig_to_f[1, 0] = -iqy
+            sig_to_f[1, 1] = iqx
+            self.sig_to_f = sig_to_f
+
 
         Qxx = fields['Qxx']  
         Qxy = fields['Qxy']
@@ -48,44 +71,19 @@ class Static_compute_fn(torch.nn.Module):
         sig =  beta * alpha * Q  
         sig_hat = torch.fft.fft2(sig)
 
-        # Cache coefficients and linear term on first forward call
-        if not hasattr(self, 'coeffs'):
-            qx = fields.qx
-            qy = fields.qy
-            iqx = 1j * qx
-            iqy = 1j * qy
-            q2 = fields.q2
-            # self.iq_w_vec = torch.stack([-iqy, iqx], dim=0)
-            # self.iq_A_vec = torch.stack([iqy, iqx], dim=0)
-            self.iqx = iqx
-            self.iqy = iqy
-
-            A = -2 * (iqx * iqy**2) / q2
-            B = ((-iqy**2 + iqx**2) * iqy) / q2
-            C = 2 * (iqx**2 * iqy) / q2
-            D = iqx * (qx**2 - qy**2) / q2
-
-            self.lin_term = -(fric + eta * q2)
-            self.coeffs = torch.stack([
-            torch.stack([A, B], dim=0),
-            torch.stack([C, D], dim=0)
-            ], dim=0)  # shape: (2, 2, N, N)
-
-        # einsum for batched matmul over last two dims
-        # print(torch.einsum('abij,bij->aij', self.coeffs, sig_hat))
-        u_hat = self.lin_term + torch.einsum('abij,bij->aij', self.coeffs, sig_hat)
+        f_hat = torch.einsum('ijxy,jxy->ixy', self.sig_to_f, sig_hat)  
+        u_hat = torch.einsum('abij,bij->aij', self.P, f_hat)
 
         # u_hat = 0*u_hat
         ux_hat = u_hat[0]
         uy_hat = u_hat[1]
-        w_hat = 0.5*(self.iqx*uy_hat - self.iqy*ux_hat)   # 0.5 * torch.einsum("cij,cij->ij", self.iq_w_vec, u_hat)
+        w_hat = 0.5*(self.iqx*uy_hat - self.iqy*ux_hat)  
 
         Axx_hat = self.iqx * ux_hat
         Axy_hat = 0.5*(self.iqx*uy_hat + self.iqy*ux_hat)
         
         Qxx_hat = fields['Qxx.hat']
-        Qxy_hat = fields['Qxy.hat']
-        
+        Qxy_hat = fields['Qxy.hat']   
         gradx_Qxx_hat = self.iqx * Qxx_hat
         grady_Qxx_hat = self.iqy * Qxx_hat
         gradx_Qxy_hat = self.iqx * Qxy_hat
@@ -110,20 +108,21 @@ seed = 42
 N = 128
 L = 128
 dt = 0.01
-steps = 20000
+steps = 25000
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-solver = System(shape = (N,N), L=L, dt=dt, device=device, record_every_n_steps = steps/100)
+solver = System(shape = (N,N), L=L, dt=dt, device=device, record_every_n_steps = 100)
 
 Qxx_0, Qxy_0 = Q_init(shape = (N,N), seed = seed)
 
 # # --- Parameters ---
-a2 = -2
+a2 = -1
 a4 = 1
 KQ = 4
 
 beta = -1
-alpha = 0.5
+alpha = 0.4
+
 
 # --- Add active fields ---
 solver.model.add_dynamic_field(
@@ -160,12 +159,12 @@ print(solver.model.fields.name_to_idx)
 
 traj = []
 start = time.time()
-for i in range(steps):
+for i in trange(steps):
     if i % solver.record_every_n_steps == 0:
-        snapshot = torch.stack([solver.model.fields[name].clone().detach().cpu() for name in solver.model.fields.name_to_idx])
+        snapshot = torch.stack([solver.model.fields[name].clone().detach().cpu() for name in ["Qxx", "Qxy"]])
         traj.append(snapshot)
-
     solver.run(1)
+    
 end = time.time()
 print(f"Elapsed time: {end - start:.6f} seconds")
 traj = torch.stack(traj).permute(1,0,2,3)
@@ -177,4 +176,4 @@ qxy = traj[1]  # shape: (time, nx, ny)
 # Calculate scalar order parameter s
 s = torch.sqrt(qxx**2 + qxy**2)  # shape: (time, nx, ny)
 
-solver.visualize(data = qxx)
+solver.visualize(data = s)

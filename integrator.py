@@ -19,6 +19,8 @@ class SemiImplicitEulerIntegrator(TimeIntegrator):
         self.dyn_count = self.model.fields.dyn_count
         self.stat_count = self.model.fields.stat_count
 
+        self.step_count = 0
+
     def step(self):
         N_hats = self.model.compute_nonlinear() 
 
@@ -33,5 +35,10 @@ class SemiImplicitEulerIntegrator(TimeIntegrator):
         # self.model.fields.spectral *= self.model.fields.dealiasing_mask
 
         self.model.fields.spatial = self.model.fields.ifftn() # calculate spatial from spectral
+
+        self.step_count += 1
+
         # spectral cleanup. Taking fft after ifft is critical for stability. 
-        self.model.fields.spectral = self.model.fields.fftn() 
+        if self.step_count % 20 == 0:
+            self.model.fields.spectral = self.model.fields.fftn() 
+            self.step_count = 0
