@@ -7,9 +7,9 @@ import pygame
 import numpy as np
 
 class System:
-    def __init__(self, N, L=2 * torch.pi, dt=0.01, device='cuda', record_every_n_steps=1000):
+    def __init__(self, shape, L=2 * torch.pi, dt=0.01, device='cuda', record_every_n_steps=1000):
 
-        self.N = N
+        self.shape = shape
         self.L = L
         self.dt = dt
         self.device = device
@@ -17,31 +17,54 @@ class System:
 
         self._init_q_space()
 
-        self.integrator = SemiImplicitEulerIntegrator(dt, self.qx, self.qy, self.q2)
-        self.model = PDEModel(N, device)
+        self.model = PDEModel(shape, device)
+        self.integrator_cl = SemiImplicitEulerIntegrator
+        
 
     def _init_q_space(self):
-        # Spatial grid (not strictly needed but kept for extensibility)
-        x = torch.linspace(0, self.L - self.L / self.N, self.N, device=self.device)
-        self.X, self.Y = torch.meshgrid(x, x, indexing='ij')
+        # Support 1D, 2D, or 3D grids depending on self.shape
+        dims = len(self.shape)
+        axes = []
+        q_axes = []
+        for i, N in enumerate(self.shape):
+            x = torch.linspace(0, self.L - self.L / N, N, device=self.device)
+            axes.append(x)
+            q = torch.fft.fftfreq(N, d=self.L / N).to(self.device) * 2 * torch.pi
+            q_axes.append(q)
 
-        # Wavenumbers
-        q = torch.fft.fftfreq(self.N, d=self.L/self.N).to(self.device) * 2 * torch.pi
-        self.qx, self.qy = torch.meshgrid(q, q, indexing='ij')
-        self.q2 = self.qx**2 + self.qy**2
-        self.q2[0, 0] = 1e-10  # avoid div by 0 if using 1/q^2 later
+        # Create spatial grids
+        self.spatial_grids = torch.meshgrid(*axes, indexing='ij')
 
-    
+        # Create wavenumber grids
+        q_grids = torch.meshgrid(*q_axes, indexing='ij')
+        self.q_grids = q_grids
+
+        # Assign qx, qy, qz if present
+        self.qx = q_grids[0]
+        self.qy = q_grids[1] if dims > 1 else None
+        self.qz = q_grids[2] if dims > 2 else None
+
+        # Compute q^2
+        self.q2 = sum(q**2 for q in q_grids)
+        if dims == 1:
+            self.q2[0] = 1e-10
+        elif dims == 2:
+            self.q2[0, 0] = 1e-10
+        elif dims == 3:
+            self.q2[0, 0, 0] = 1e-10
+
+
+    def build(self):
+        self.model.fields.set_wavenumbers(self.qx, self.qy, self.qz, self.q2)
+        self.model.build()
+        self.integrator = self.integrator_cl(self.model, self.dt, self.qx, self.qy, self.q2)
+
     def run(self, steps, callback = None):
         for step in range(steps):
-            self.integrator.step(self.model)
+            self.integrator.step()
             
             if callback is not None:
                 callback(self,step)
-
-
-
-
 
 
     def visualize(self, data, filename="output.mp4", fps=20, cmap="viridis"):
@@ -64,6 +87,7 @@ class System:
         ani.save(filename, writer='ffmpeg', fps=fps)
         plt.show()
         plt.close(fig)
+        
 
     def visualize_pygame(self, data, scale=2, cmap="viridis"):
         import matplotlib.pyplot as plt

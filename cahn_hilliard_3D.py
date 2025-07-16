@@ -1,6 +1,7 @@
 from solver import System
 import torch
 import time
+from tqdm import trange
 
 
 class CH_NLmodel(torch.nn.Module):
@@ -8,17 +9,17 @@ class CH_NLmodel(torch.nn.Module):
         u = fields['u']  
         q2 = fields.q2
 
-        output = - q2 * b * torch.fft.fft2(u**3)
+        output = - q2 * b * torch.fft.fftn(u**3, dim=[-1,-2,-3])
         return output.unsqueeze(0)
 
- 
+
 N = 256
-L = 256
+L = 128
 dt = 0.1
 steps = 100000
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Using device: {device}")
-solver = System(shape=(N,N), L=L, dt=dt, device=device, record_every_n_steps = steps/100)
+solver = System(shape=(N,N,N), L=L, dt=dt, device=device, record_every_n_steps = steps//100)
 
 # # --- Parameters ---
 a = -2
@@ -28,7 +29,7 @@ k = 4
 # # --- Add active fields ---
 solver.model.add_dynamic_field(
     "u",
-    init = 0.1 * torch.randn((N, N)),
+    init = 0.1 * torch.randn((N, N, N)),
     L_hat = -solver.q2 * (a + k*solver.q2)
 )
 
@@ -37,14 +38,16 @@ solver.build()
 
 traj = []
 start = time.time()
-for i in range(steps):
-    solver.run(1)
-    if i % solver.record_every_n_steps == 0:
-        traj.append(solver.model.fields['u'])
+
+for i in trange(steps//solver.record_every_n_steps, desc="Solving"):
+    solver.run(solver.record_every_n_steps)
+    traj.append(solver.model.fields['u'])
 end = time.time()
 print(f"Elapsed time: {end - start:.6f} seconds")
+
 traj = torch.stack(traj)
 
 
-solver.visualize_pygame(data = traj)
+# solver.visualize_pygame(data = traj)
+# solver.visualize3d(data = traj)
 
