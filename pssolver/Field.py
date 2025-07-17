@@ -1,5 +1,41 @@
 import torch
 
+class Parameters:
+    def __init__(self):
+        self._params = {}
+
+    def set_param(self, name, value):
+        """Set a parameter by name, avoiding duplicates."""
+        if name in self._params:
+            raise KeyError(f"Parameter '{name}' already exists.")
+        self._params[name] = value
+
+    def update_param(self, name, value):
+        """Update an existing parameter by name."""
+        if name in self._params:
+            self._params[name] = value
+        else:
+            raise KeyError(f"Parameter '{name}' does not exist.")
+
+    def get_param(self, name):
+        """Get a parameter by name."""
+        return self[name]
+
+    def __getitem__(self, key):
+        """Return the value for the given key from internal parameters."""
+        if key not in self._params:
+            raise KeyError(f"Parameter '{key}' does not exist.")
+        return self._params[key]
+        
+    def keys(self):
+        return list(self._params.keys())
+
+    def values(self):
+        return list(self._params.values())
+
+    def items(self):
+        return list(self._params.items())
+
 
 class Fields:
     def __init__(self, shape, device="cuda", dtype=torch.float32):

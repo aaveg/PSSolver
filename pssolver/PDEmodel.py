@@ -1,6 +1,6 @@
 import torch
-from Field import Fields
-import warnings
+from .Field import Fields, Parameters
+import inspect
 
 
 class PDEModel:
@@ -8,12 +8,13 @@ class PDEModel:
         self.shape = shape
         self.device = device
         self.fields = Fields(shape = shape, device = device)
+        self.parameters = Parameters()
         self.num_fields = 0
         self.dyn_fields = []
         self.stat_fields = []
         self.nlmodel = None
         self.static_model = None
-        self.is_built: bool = False
+
 
     def add_dynamic_field(self, name, init, L_hat):
         if init.shape != self.shape:
@@ -34,9 +35,6 @@ class PDEModel:
         self.static_model = model
 
     def build(self):
-        if self.is_built:
-            pass
-        
         if not self.dyn_fields:
             raise ValueError("No dynamic fields added. Add at least one dynamic field.")
         
@@ -68,30 +66,49 @@ class PDEModel:
 
         if self.nlmodel is None:
             self.nlmodel = ZeroModel()
-
-        if self.static_model is None:
-            self.static_model = ZeroModel()
-        
         else:
+            # Validate nonlinear model
             try:
-                test_output = self.nlmodel(self.fields)
+                sig = inspect.signature(self.nlmodel.forward)
+                if len(sig.parameters) != 2:  # fields, parameters
+                    raise TypeError("Nonlinear model's forward method must accept two input parameters: fields and parameters")
+                test_output = self.nlmodel(self.fields, self.parameters)
                 expected_shape = (self.fields.dyn_count, *self.shape)
                 if test_output.shape != expected_shape:
                     raise ValueError(f"Nonlinear model output shape {test_output.shape} doesn't match expected {expected_shape}")
             except Exception as e:
-                raise RuntimeError("Error occurred during nonlinear model validation.")
+                raise RuntimeError("Error occurred during nonlinear model validation.") from e
+
+
+        if self.static_model is None:
+            self.static_model = ZeroModel()
+        else:
+            # Validate static model
+            try:
+                sig = inspect.signature(self.static_model.forward)
+                if len(sig.parameters) != 2:  # fields, parameters
+                    raise TypeError("Static model's forward method must accept two input parameters: fields and parameters")
+                test_output = self.static_model(self.fields, self.parameters)
+                expected_shape = (self.fields.stat_count, *self.shape)
+                if test_output.shape != expected_shape:
+                    raise ValueError(f"Static model output shape {test_output.shape} doesn't match expected {expected_shape}")
+            except Exception as e:
+                raise RuntimeError("Error occurred during static model validation.") from e
+        
+
+        
     
     def get_field_order(self):
         """Return the order of dynamic fields for reference when writing nonlinear models."""
         return [entry[0] for entry in self.dyn_fields]
 
     def compute_static(self):
-        return self.static_model(self.fields)
+        return self.static_model(self.fields, self.parameters)
 
     def compute_nonlinear(self):
-        return self.nlmodel(self.fields)
+        return self.nlmodel(self.fields, self.parameters)
 
 
 class ZeroModel(torch.nn.Module):
-    def forward(self, fields):
+    def forward(self, fields,params):
         return 0

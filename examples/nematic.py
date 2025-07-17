@@ -1,9 +1,14 @@
+# import sys
+# import os
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import time
 import torch
-from solver import System
+from pssolver import SpectralSolver
 from tqdm import trange
 
-def Q_init(shape, seed = 42,):
+
+def Q_init(shape, seed = 42):
     Nx,Ny = shape
     generator = torch.Generator().manual_seed(seed)
     angle_radians = torch.tensor(torch.pi / 3)
@@ -22,7 +27,7 @@ class NonlinearModel(torch.nn.Module):
         self.qy = solver.qy
         self.q2 = solver.q2
         
-    def forward(self, fields): 
+    def forward(self, fields, params): 
         Qxx = fields['Qxx']  
         Qxy = fields['Qxy']
         Qsq = Qxx**2 + Qxy**2
@@ -38,8 +43,8 @@ class NonlinearModel(torch.nn.Module):
         Axy = fields['Axy']
 
         lam = 1
-        out0 =  -a4*Qsq*Qxx - ux*gxQxx - uy*gyQxx - 2*Qxy*w + lam*Axx #lam*iqx*ux #lam*Axx 
-        out1 =  -a4*Qsq*Qxy - ux*gxQxy - uy*gyQxy + 2*Qxx*w + lam*Axy #0.5*lam*(iqx*uy + iqy*ux) #lam*Axy 
+        out0 =  -a4*Qsq*Qxx - ux*gxQxx - uy*gyQxx - 2*Qxy*w + lam*Axx  
+        out1 =  -a4*Qsq*Qxy - ux*gxQxy - uy*gyQxy + 2*Qxx*w + lam*Axy  
         
         return torch.fft.fft2(torch.stack([out0, out1]))  
 
@@ -70,10 +75,10 @@ class Static_compute_fn(torch.nn.Module):
         self.sig_to_f = sig_to_f
 
     ### avoid repeating same calculations
-    def forward(self, fields): 
-        # Cache Projection operator on first forward call
+    def forward(self, fields, params): 
         Qxx = fields['Qxx']  
         Qxy = fields['Qxy']
+        alpha = params['alpha']
         Q = torch.stack([Qxx, Qxy], dim=0)
         sig =  beta * alpha * Q  
         sig_hat = torch.fft.fft2(sig)
@@ -111,25 +116,23 @@ class Static_compute_fn(torch.nn.Module):
 
 
 
-seed = 42
+seed = 24
 N = 128
 L = 128
 dt = 0.01
-steps = 100000
+steps = 25000
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-solver = System(shape = (N,N), L=L, dt=dt, device=device, record_every_n_steps = steps//100)
+solver = SpectralSolver(shape = (N,N), L=L, dt=dt, device=device, record_every_n_steps = steps//100)
 
 Qxx_0, Qxy_0 = Q_init(shape = (N,N), seed = seed)
 
 # # --- Parameters ---
 a2 = -1
 a4 = 1
-KQ = 4
+KQ = 10
 
 beta = -1
-alpha = 0.4
-
 
 # --- Add active fields ---
 solver.model.add_dynamic_field(
@@ -160,10 +163,15 @@ compiled_nl_model = torch.compile(NonlinearModel(solver),  mode="max-autotune")
 compiled_static_model = torch.compile(Static_compute_fn(solver), mode="max-autotune")
 solver.model.set_nonlinear_model(compiled_nl_model)
 solver.model.set_static_compute_model(compiled_static_model)
+# solver.model.set_nonlinear_model(NonlinearModel(solver))
+# solver.model.set_static_compute_model(Static_compute_fn(solver))
+
+alpha = 0.4 * torch.ones((N, N), device=device)
+solver.model.parameters.set_param('alpha', alpha)
 
 solver.build()
-print(solver.model.fields.dyn_count)
-print(solver.model.fields.name_to_idx)
+# print(solver.model.fields.dyn_count)
+# print(solver.model.fields.name_to_idx)
 
 traj = []
 start = time.time()
@@ -171,16 +179,18 @@ for i in trange(steps):
     if i % solver.record_every_n_steps == 0:
         snapshot = torch.stack([solver.model.fields[name].clone().detach().cpu() for name in ["Qxx", "Qxy"]])
         traj.append(snapshot)
+    if i==steps//2:
+        alpha.fill_(0)
     solver.run(1)
+
     
 end = time.time()
 print(f"Elapsed time: {end - start:.6f} seconds")
 traj = torch.stack(traj).permute(1,0,2,3)
 
-# traj = torch.stack([torch.sqrt(Qxx_0**2 + Qxy_0**2)])
-
 qxx = traj[0]  # shape: (time, nx, ny)
 qxy = traj[1]  # shape: (time, nx, ny)
+
 # Calculate scalar order parameter s
 s = torch.sqrt(qxx**2 + qxy**2)  # shape: (time, nx, ny)
 

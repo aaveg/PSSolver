@@ -1,4 +1,3 @@
-import torch
 
 class TimeIntegrator:
     def __init__(self, dt, qx, qy, q2):

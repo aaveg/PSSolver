@@ -19,7 +19,7 @@ def init_v(N):
     return v
 
 class NonlinearModel(torch.nn.Module):
-    def forward(self, fields): 
+    def forward(self, fields, params): 
         u = fields['u']  
         v = fields['v']
 

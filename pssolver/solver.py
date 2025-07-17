@@ -1,12 +1,12 @@
 import torch
 import torch.fft
 
-from integrator import SemiImplicitEulerIntegrator
-from PDEModel import PDEModel
+from .integrator import SemiImplicitEulerIntegrator
+from .PDEmodel import PDEModel
 import pygame
 import numpy as np
 
-class System:
+class SpectralSolver:
     def __init__(self, shape, L=2 * torch.pi, dt=0.01, device='cuda', record_every_n_steps=1000):
 
         self.shape = shape
@@ -58,6 +58,12 @@ class System:
         self.model.fields.set_wavenumbers(self.qx, self.qy, self.qz, self.q2)
         self.model.build()
         self.integrator = self.integrator_cl(self.model, self.dt, self.qx, self.qy, self.q2)
+
+    # add ability to reset initial state of dynamic fields
+    def reset(self, inits = {}):
+        self.model.build()
+        for name, val in inits.items():
+            self.model.fields[name] = val
 
     def run(self, steps, callback = None):
         for step in range(steps):
