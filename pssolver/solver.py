@@ -7,13 +7,12 @@ import pygame
 import numpy as np
 
 class SpectralSolver:
-    def __init__(self, shape, L=2 * torch.pi, dt=0.01, device='cuda', record_every_n_steps=1000):
+    def __init__(self, shape, L=2 * torch.pi, dt=0.01, device='cuda'):
 
         self.shape = shape
         self.L = L
         self.dt = dt
         self.device = device
-        self.record_every_n_steps = record_every_n_steps
 
         self._init_q_space()
 

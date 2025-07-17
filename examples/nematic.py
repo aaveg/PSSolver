@@ -118,12 +118,12 @@ class Static_compute_fn(torch.nn.Module):
 
 seed = 24
 N = 128
-L = 128
+L = 256
 dt = 0.01
 steps = 25000
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-solver = SpectralSolver(shape = (N,N), L=L, dt=dt, device=device, record_every_n_steps = steps//100)
+solver = SpectralSolver(shape = (N,N), L=L, dt=dt, device=device)
 
 Qxx_0, Qxy_0 = Q_init(shape = (N,N), seed = seed)
 
@@ -170,17 +170,17 @@ alpha = 0.4 * torch.ones((N, N), device=device)
 solver.model.parameters.set_param('alpha', alpha)
 
 solver.build()
-# print(solver.model.fields.dyn_count)
-# print(solver.model.fields.name_to_idx)
+print(solver.model.fields.dyn_count)
+print(solver.model.fields.name_to_idx)
 
 traj = []
 start = time.time()
 for i in trange(steps):
-    if i % solver.record_every_n_steps == 0:
+    if i % (steps//100) == 0:
         snapshot = torch.stack([solver.model.fields[name].clone().detach().cpu() for name in ["Qxx", "Qxy"]])
         traj.append(snapshot)
-    if i==steps//2:
-        alpha.fill_(0)
+    # if i==steps//2:
+    #     alpha.fill_(0)
     solver.run(1)
 
     

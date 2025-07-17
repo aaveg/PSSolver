@@ -20,7 +20,7 @@ dt = 0.1
 steps = 100000
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Using device: {device}")
-solver = SpectralSolver(shape=(N,N), L=L, dt=dt, device=device, record_every_n_steps = steps/100)
+solver = SpectralSolver(shape=(N,N), L=L, dt=dt, device=device )
 
 # # --- Parameters ---
 a = -2
@@ -42,7 +42,7 @@ traj = []
 start = time.time()
 for i in trange(steps):
     solver.run(1)
-    if i % solver.record_every_n_steps == 0:
+    if i % (steps//100) == 0:
         traj.append(solver.model.fields['u'])
 end = time.time()
 print(f"Elapsed time: {end - start:.6f} seconds")

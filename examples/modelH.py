@@ -1,9 +1,9 @@
 import time
 import torch
-from solver import System
+from pssolver import SpectralSolver
 
 class NonlinearModel(torch.nn.Module):
-    def forward(self, fields): 
+    def forward(self, fields, params): 
         phi = fields['phi']  
         q2 = fields.q2
         
@@ -17,7 +17,7 @@ class NonlinearModel(torch.nn.Module):
         return out0.unsqueeze(0)  
 
 class Static_compute_fn(torch.nn.Module):
-    def forward(self, fields): 
+    def forward(self, fields, params): 
         ### avoid repeating same calculations
 
         # Cache coefficients and linear term on first forward call
@@ -74,12 +74,12 @@ class Static_compute_fn(torch.nn.Module):
 
 seed = 42
 N = 128
-L = 128
+L = 256
 dt = 0.1
 steps = 20000
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-solver = System(shape = (N,N), L=L, dt=dt, device=device, record_every_n_steps = steps/100)
+solver = SpectralSolver(shape = (N,N), L=L, dt=dt, device=device)
 
 # # --- Parameters ---
 a = -1
@@ -111,7 +111,7 @@ print(solver.model.fields.name_to_idx)
 traj = []
 start = time.time()
 for i in range(steps):
-    if i % solver.record_every_n_steps == 0:
+    if i % (steps//100)== 0:
         snapshot = torch.stack([solver.model.fields[name].clone().detach().cpu() for name in solver.model.fields.name_to_idx])
         traj.append(snapshot)
 
