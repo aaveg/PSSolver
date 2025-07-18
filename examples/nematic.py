@@ -54,37 +54,40 @@ class Static_compute_fn(torch.nn.Module):
         qx = solver.qx
         qy = solver.qy
         q2 = solver.q2
+        batch_size = solver.batch_size
 
         iqx = 1j * qx
         iqy = 1j * qy
         self.iqx = iqx
         self.iqy = iqy
 
-        P = torch.zeros((2, 2, *q2.shape), dtype=torch.cfloat, device=q2.device)
+        P = torch.zeros((2, 2, batch_size, *q2.shape), dtype=torch.cfloat, device=q2.device)
         P[0, 0] = 1 - (qx * qx) / q2
         P[0, 1] = - (qx * qy) / q2
         P[1, 0] = - (qy * qx) / q2
         P[1, 1] = 1 - (qy * qy) / q2
         self.P = P * 1/(fric+eta*q2)
+        # self.P = self.P.unsqueeze(0).expand(batch_size, -1, -1, -1, -1).contiguous()
 
-        sig_to_f = torch.zeros((2, 2, *q2.shape), dtype=torch.cfloat, device=q2.device)
+        sig_to_f = torch.zeros((2, 2, batch_size, *q2.shape), dtype=torch.cfloat, device=q2.device)
         sig_to_f[0, 0] = iqx
         sig_to_f[0, 1] = iqy
         sig_to_f[1, 0] = -iqy
         sig_to_f[1, 1] = iqx
         self.sig_to_f = sig_to_f
+        # self.sig_to_f = self.sig_to_f.unsqueeze(0).expand(batch_size, -1, -1, -1, -1).contiguous()
 
     ### avoid repeating same calculations
     def forward(self, fields, params): 
         Qxx = fields['Qxx']  
         Qxy = fields['Qxy']
         alpha = params['alpha']
-        Q = torch.stack([Qxx, Qxy], dim=0)
+        Q = torch.stack([Qxx, Qxy], dim=0) # shape -> (2,B, *shape)
         sig =  beta * alpha * Q  
         sig_hat = torch.fft.fft2(sig)
 
-        f_hat = torch.einsum('ijxy,jxy->ixy', self.sig_to_f, sig_hat)  
-        u_hat = torch.einsum('abij,bij->aij', self.P, f_hat)
+        f_hat = torch.einsum('ijBxy,jBxy->iBxy', self.sig_to_f, sig_hat)  
+        u_hat = torch.einsum('abBij,bBij->aBij', self.P, f_hat)
 
         # u_hat = 0*u_hat
         ux_hat = u_hat[0]
@@ -120,10 +123,11 @@ seed = 24
 N = 128
 L = 256
 dt = 0.01
-steps = 25000
+steps = 20000
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+batch = 5
 
-solver = SpectralSolver(shape = (N,N), L=L, dt=dt, device=device)
+solver = SpectralSolver(shape = (N,N), L=L, dt=dt, device=device, batch_size= batch)
 
 Qxx_0, Qxy_0 = Q_init(shape = (N,N), seed = seed)
 
@@ -166,7 +170,7 @@ solver.model.set_static_compute_model(compiled_static_model)
 # solver.model.set_nonlinear_model(NonlinearModel(solver))
 # solver.model.set_static_compute_model(Static_compute_fn(solver))
 
-alpha = 0.4 * torch.ones((N, N), device=device)
+alpha = 0.4 * torch.ones((batch, N, N), device=device)
 solver.model.parameters.set_param('alpha', alpha)
 
 solver.build()
@@ -177,7 +181,7 @@ traj = []
 start = time.time()
 for i in trange(steps):
     if i % (steps//100) == 0:
-        snapshot = torch.stack([solver.model.fields[name].clone().detach().cpu() for name in ["Qxx", "Qxy"]])
+        snapshot = torch.stack([solver.model.fields[name].clone().detach().cpu() for name in ["Qxx", "Qxy"]]) # shape -> (2, batch, N,N)
         traj.append(snapshot)
     # if i==steps//2:
     #     alpha.fill_(0)
@@ -186,10 +190,14 @@ for i in trange(steps):
     
 end = time.time()
 print(f"Elapsed time: {end - start:.6f} seconds")
-traj = torch.stack(traj).permute(1,0,2,3)
+traj = torch.stack(traj) # shape -> (time, 2, batch, N,N)
+traj = traj.permute(2,1,0,3,4) # shape -> (batch, 2, time, N,N)
 
-qxx = traj[0]  # shape: (time, nx, ny)
-qxy = traj[1]  # shape: (time, nx, ny)
+print(traj.shape)
+
+batch_traj = traj[0] 
+qxx = batch_traj[0]  # shape: (time, nx, ny)
+qxy = batch_traj[1]  # shape: (time, nx, ny)
 
 # Calculate scalar order parameter s
 s = torch.sqrt(qxx**2 + qxy**2)  # shape: (time, nx, ny)

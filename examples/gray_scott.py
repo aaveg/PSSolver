@@ -38,7 +38,7 @@ dt = 0.1
 steps = 100000
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-solver = SpectralSolver(shape = (N,N), L=L, dt=dt, device=device)
+solver = SpectralSolver(shape = (N,N), L=L, dt=dt, device=device, batch_size = 2)
 
 # # --- Parameters ---
 du = 0.16
@@ -49,8 +49,8 @@ k = 0.062
 # --- Add active fields ---
 solver.model.add_dynamic_field(
     "u",
-    init = init_u(N),
-    L_hat = -solver.q2 * (du)
+    init = init_u(N), # same initial condition for all batches
+    L_hat = -solver.q2 * (du) # same L_hat for all batches
 )
 # --- Add active fields ---
 solver.model.add_dynamic_field(
@@ -71,8 +71,8 @@ for i in trange(steps):
         traj.append(solver.model.fields['u'])
 end = time.time()
 print(f"Elapsed time: {end - start:.6f} seconds")
-traj = torch.stack(traj)
+traj = torch.stack(traj).permute(1,0,2,3) # shape (Batch, Time, *shape)
+print("traj shape:", traj.shape)
 
-
-solver.visualize_pygame(data = traj)
+solver.visualize_pygame(data = traj[0])
 

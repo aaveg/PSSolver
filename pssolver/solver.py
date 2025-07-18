@@ -7,18 +7,18 @@ import pygame
 import numpy as np
 
 class SpectralSolver:
-    def __init__(self, shape, L=2 * torch.pi, dt=0.01, device='cuda'):
+    def __init__(self, shape, L=2 * torch.pi, dt=0.01, batch_size = 1, device='cuda'):
 
         self.shape = shape
         self.L = L
         self.dt = dt
         self.device = device
+        self.batch_size = batch_size
 
         self._init_q_space()
 
-        self.model = PDEModel(shape, device)
+        self.model = PDEModel(shape, device, batch_size=batch_size)
         self.integrator_cl = SemiImplicitEulerIntegrator
-        
 
     def _init_q_space(self):
         # Support 1D, 2D, or 3D grids depending on self.shape

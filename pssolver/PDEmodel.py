@@ -4,11 +4,13 @@ import inspect
 
 
 class PDEModel:
-    def __init__(self, shape, device):
+    def __init__(self, shape, device, batch_size):
         self.shape = shape
         self.device = device
-        self.fields = Fields(shape = shape, device = device)
-        self.parameters = Parameters()
+        self.batch_size = batch_size
+
+        self.fields = Fields(shape = shape, device = device, batch_size = self.batch_size)
+        self.parameters = Parameters()#batch_size = self.batch_size)
         self.num_fields = 0
         self.dyn_fields = []
         self.stat_fields = []
@@ -17,8 +19,22 @@ class PDEModel:
 
 
     def add_dynamic_field(self, name, init, L_hat):
-        if init.shape != self.shape:
-            raise ValueError(f"Initial value for field '{name}' must have shape {self.shape}, got {init.shape}")
+        # Accepts init with or without batch dimension
+        if init.shape == self.shape:
+            init = init.unsqueeze(0).repeat(self.batch_size, *[1]*len(self.shape))
+        elif init.shape == (self.batch_size, *self.shape):
+            pass
+        else:
+            raise ValueError(f"Initial value for field '{name}' must have shape {self.shape} or {(self.batch_size, *self.shape)}, got {init.shape}")
+        
+        # Accepts L_hat with or without batch dimension
+        if L_hat.shape == self.shape:
+            L_hat = L_hat.unsqueeze(0).repeat(self.batch_size, *[1]*len(self.shape))
+        elif L_hat.shape == (self.batch_size, *self.shape):
+            pass
+        else:
+            raise ValueError(f"L_hat for field '{name}' must have shape {self.shape} or {(self.batch_size, *self.shape)}, got {L_hat.shape}")
+
         self.dyn_fields.append([name, init, L_hat])
 
     def add_static_field(self, name):
@@ -57,12 +73,12 @@ class PDEModel:
         for entry in self.stat_fields:
             self.fields.name_to_idx[entry[0]] = count 
             count += 1
-            inits.append(torch.zeros(self.shape))
+            inits.append(torch.zeros(self.batch_size, *self.shape))
         self.fields.stat_count = count - self.fields.dyn_count
 
-        self.fields.spatial = torch.stack(inits).to(self.device)
+        self.fields.spatial = torch.stack(inits).to(self.device)#.permute(1, 0, *range(2, 2 + len(self.shape)))
         self.fields.spectral = self.fields.fftn()
-        self.fields.L_hat = torch.stack(L_hats).to(self.device)
+        self.fields.L_hat = torch.stack(L_hats).to(self.device)#.permute(1, 0, *range(2, 2 + len(self.shape)))
 
         if self.nlmodel is None:
             self.nlmodel = ZeroModel()
@@ -73,7 +89,7 @@ class PDEModel:
                 if len(sig.parameters) != 2:  # fields, parameters
                     raise TypeError("Nonlinear model's forward method must accept two input parameters: fields and parameters")
                 test_output = self.nlmodel(self.fields, self.parameters)
-                expected_shape = (self.fields.dyn_count, *self.shape)
+                expected_shape = (self.fields.dyn_count, self.batch_size, *self.shape)
                 if test_output.shape != expected_shape:
                     raise ValueError(f"Nonlinear model output shape {test_output.shape} doesn't match expected {expected_shape}")
             except Exception as e:
@@ -89,7 +105,7 @@ class PDEModel:
                 if len(sig.parameters) != 2:  # fields, parameters
                     raise TypeError("Static model's forward method must accept two input parameters: fields and parameters")
                 test_output = self.static_model(self.fields, self.parameters)
-                expected_shape = (self.fields.stat_count, *self.shape)
+                expected_shape = (self.fields.stat_count, self.batch_size, *self.shape)
                 if test_output.shape != expected_shape:
                     raise ValueError(f"Static model output shape {test_output.shape} doesn't match expected {expected_shape}")
             except Exception as e:

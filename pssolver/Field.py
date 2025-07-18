@@ -38,7 +38,7 @@ class Parameters:
 
 
 class Fields:
-    def __init__(self, shape, device="cuda", dtype=torch.float32):
+    def __init__(self, shape, device="cuda", dtype=torch.float32, batch_size = 1):
         """
         field_names: list of str, e.g., ['u', 'v']
         shape: tuple of length 1, 2, or 3 (e.g., (Nx,), (Nx, Ny), (Nx, Ny, Nz))
@@ -46,6 +46,7 @@ class Fields:
         self.shape = shape
         self.device = device
         self.dtype = dtype
+        self.batch_size = batch_size
 
         self.qx = None
         self.qy = None 
@@ -58,9 +59,9 @@ class Fields:
         self.dyn_count = 0
         self.stat_count = 0
 
-        self.spatial = torch.zeros((0,) + shape, device=self.device, dtype=self.dtype)  # shape: (number_of_fields = 0, Nx, Ny, Nz)
-        self.L_hat   = torch.zeros((0,) + shape, device=self.device, dtype=self.dtype)  # shape: (number_of_fields = 0, Nx, Ny, Nz) -> L_hat for static fields =0 (done for speed optimization)
-        self.spectral = torch.zeros((0,) + shape, device=self.device, dtype=self.dtype)
+        self.spatial  = None  # shape: (Batch, number_of_fields, Nx, Ny, Nz)
+        self.L_hat    = None  # shape: (Batch, number_of_dynamic_fields, Nx, Ny, Nz)
+        self.spectral = None 
 
     
     def set_wavenumbers(self, qx=None, qy=None, qz=None, q2=None):
@@ -82,11 +83,11 @@ class Fields:
 
     def fftn(self):
         """Return batched N-dimensional FFT of all fields"""
-        return torch.fft.fftn(self.spatial, dim=tuple(range(1, 1 + self.dim)))
+        return torch.fft.fftn(self.spatial, dim=tuple(range(2, 2 + self.dim)))
 
     def ifftn(self):
         """Return batched N-dimensional IFFT (real part) of all fields"""
-        return torch.fft.ifftn(self.spectral, dim=tuple(range(1, 1 + self.dim))).real
+        return torch.fft.ifftn(self.spectral, dim=tuple(range(2, 2 + self.dim))).real
 
 
     def keys(self):
