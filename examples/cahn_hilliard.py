@@ -37,7 +37,6 @@ solver.model.add_dynamic_field(
 solver.model.set_nonlinear_model(CH_NLmodel())
 solver.model.parameters.set_param('b', 1)
 solver.build()
-# print(solver.model.fields['u'].shape)
 
 traj = []
 start = time.time()
@@ -51,6 +50,6 @@ traj = torch.stack(traj).permute(1,0,2,3)
 
 print(traj.shape)
 solver.visualize(data = traj[0])
-solver.visualize(data = traj[1])
-solver.visualize(data = traj[2])
+# solver.visualize(data = traj[1])
+# solver.visualize(data = traj[2])
 

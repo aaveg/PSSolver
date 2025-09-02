@@ -41,7 +41,7 @@ class Fields:
     def __init__(self, shape, device="cuda", dtype=torch.float32, batch_size = 1):
         """
         field_names: list of str, e.g., ['u', 'v']
-        shape: tuple of length 1, 2, or 3 (e.g., (Nx,), (Nx, Ny), (Nx, Ny, Nz))
+        shape: tuple of length 1, 2, or 3 (e.g., (B, Nx,), (B, Nx, Ny), (B, Nx, Ny, Nz))
         """
         self.shape = shape
         self.device = device
@@ -80,6 +80,15 @@ class Fields:
         else:
             raise KeyError("Key must be a field name (str), optionally ending with '.hat'")
 
+    def __setitem__(self, key, value):
+        """Set a field by name (optionally with '.hat')"""
+        if isinstance(key, str):
+            if key.endswith('.hat'):
+                self.spectral[self.name_to_idx[key[:-4]]] = value
+            else:
+                self.spatial[self.name_to_idx[key]] = value
+        else:
+            raise KeyError("Key must be a field name (str), optionally ending with '.hat'")
 
     def fftn(self):
         """Return batched N-dimensional FFT of all fields"""

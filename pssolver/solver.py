@@ -59,10 +59,11 @@ class SpectralSolver:
         self.integrator = self.integrator_cl(self.model, self.dt, self.qx, self.qy, self.q2)
 
     # add ability to reset initial state of dynamic fields
-    def reset(self, inits = {}):
+    def reset(self, inits={}):
         self.model.build()
         for name, val in inits.items():
             self.model.fields[name] = val
+        self.model.fields.spectral = self.model.fields.fftn()
 
     def run(self, steps, callback = None):
         for step in range(steps):
@@ -82,7 +83,8 @@ class SpectralSolver:
 
         def update(frame):
             im.set_data(data[frame].cpu().numpy())
-            im.set_clim(vmin=data[frame].min().item(), vmax=data[frame].max().item())
+            im.set_clim(vmin=0, vmax=1)
+            # im.set_clim(vmin=data[frame].min().item(), vmax=data[frame].max().item())
             fig.canvas.draw_idle()
             return [im]
 

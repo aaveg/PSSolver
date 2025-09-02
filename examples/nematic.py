@@ -67,7 +67,6 @@ class Static_compute_fn(torch.nn.Module):
         P[1, 0] = - (qy * qx) / q2
         P[1, 1] = 1 - (qy * qy) / q2
         self.P = P * 1/(fric+eta*q2)
-        # self.P = self.P.unsqueeze(0).expand(batch_size, -1, -1, -1, -1).contiguous()
 
         sig_to_f = torch.zeros((2, 2, batch_size, *q2.shape), dtype=torch.cfloat, device=q2.device)
         sig_to_f[0, 0] = iqx
@@ -75,7 +74,6 @@ class Static_compute_fn(torch.nn.Module):
         sig_to_f[1, 0] = -iqy
         sig_to_f[1, 1] = iqx
         self.sig_to_f = sig_to_f
-        # self.sig_to_f = self.sig_to_f.unsqueeze(0).expand(batch_size, -1, -1, -1, -1).contiguous()
 
     ### avoid repeating same calculations
     def forward(self, fields, params): 
@@ -87,7 +85,7 @@ class Static_compute_fn(torch.nn.Module):
         sig_hat = torch.fft.fft2(sig)
 
         f_hat = torch.einsum('ijBxy,jBxy->iBxy', self.sig_to_f, sig_hat)  
-        u_hat = torch.einsum('abBij,bBij->aBij', self.P, f_hat)
+        u_hat = torch.einsum('ijBxy,jBxy->iBxy', self.P, f_hat)
 
         # u_hat = 0*u_hat
         ux_hat = u_hat[0]
